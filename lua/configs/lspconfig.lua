@@ -1,4 +1,3 @@
-local lspconfig = require('lspconfig')
 local cmp_nvim_lsp = require('cmp_nvim_lsp')
 
 local capabilities = cmp_nvim_lsp.default_capabilities()
@@ -81,34 +80,64 @@ local function get_python_path(workspace)
   return vim.fn.exepath('python3') or vim.fn.exepath('python') or 'python'
 end
 
+-- Use vim.lsp.config for server setups (new API)
 -- Setup ruff (for linting and formatting)
-lspconfig.ruff.setup {
-  on_attach = on_attach,
-  capabilities = capabilities,
+vim.lsp.config.ruff = {
+  default_config = {
+    cmd = { 'ruff', 'server' },
+    filetypes = { 'python' },
+    root_dir = vim.fs.dirname(vim.fs.find({ 'pyproject.toml', 'ruff.toml', '.ruff.toml' }, { upward = true })[1]),
+    on_attach = on_attach,
+    capabilities = capabilities,
+  },
 }
 
 -- Setup pyright for Python language features (without type checking since mypy will handle that)
-lspconfig.pyright.setup {
-  on_attach = on_attach,
-  capabilities = capabilities,
-  settings = {
-    python = {
-      analysis = {
-        -- Disable pyright's type checking since we'll use mypy
-        typeCheckingMode = "off",
-        autoSearchPaths = true,
-        useLibraryCodeForTypes = true,
-        diagnosticMode = "workspace",
-      }
-    }
-  }
-}
-
--- Setup other servers
-local other_servers = { 'html', 'cssls' }
-for _, server in ipairs(other_servers) do
-  lspconfig[server].setup {
+vim.lsp.config.pyright = {
+  default_config = {
+    cmd = { 'pyright-langserver', '--stdio' },
+    filetypes = { 'python' },
+    root_dir = vim.fs.dirname(vim.fs.find({ 'pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt', 'Pipfile' }, { upward = true })[1]),
     on_attach = on_attach,
     capabilities = capabilities,
-  }
-end
+    settings = {
+      python = {
+        analysis = {
+          -- Disable pyright's type checking since we'll use mypy
+          typeCheckingMode = "off",
+          autoSearchPaths = true,
+          useLibraryCodeForTypes = true,
+          diagnosticMode = "workspace",
+        }
+      }
+    },
+  },
+}
+
+-- Setup HTML server
+vim.lsp.config.html = {
+  default_config = {
+    cmd = { 'vscode-html-language-server', '--stdio' },
+    filetypes = { 'html' },
+    root_dir = vim.fs.dirname(vim.fs.find({ 'package.json', '.git' }, { upward = true })[1]),
+    on_attach = on_attach,
+    capabilities = capabilities,
+  },
+}
+
+-- Setup CSS server
+vim.lsp.config.cssls = {
+  default_config = {
+    cmd = { 'vscode-css-language-server', '--stdio' },
+    filetypes = { 'css', 'scss', 'less' },
+    root_dir = vim.fs.dirname(vim.fs.find({ 'package.json', '.git' }, { upward = true })[1]),
+    on_attach = on_attach,
+    capabilities = capabilities,
+  },
+}
+
+-- Start the configured servers
+vim.lsp.enable('ruff')
+vim.lsp.enable('pyright')
+vim.lsp.enable('html')
+vim.lsp.enable('cssls')
