@@ -2,7 +2,7 @@ local keymap = vim.keymap
 
 -- Neo-tree
 keymap.set("n", "<leader>e", ":Neotree toggle<CR>", { silent = true, desc = "Toggle Neo-tree" })
-keymap.set("n", "<leader>r", ":Neotree refresh<CR>", { silent = true, desc = "Refresh Neo-tree" })
+keymap.set("n", "<leader>nr", ":Neotree refresh<CR>", { silent = true, desc = "Refresh Neo-tree" })
 
 -- Telescope
 keymap.set("n", "<leader>rg", ":Telescope live_grep<CR>", { silent = true, desc = "Live Grep with Telescope" })

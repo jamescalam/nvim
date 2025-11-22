@@ -1,5 +1,106 @@
 return {
   {
+    "Vigemus/iron.nvim",
+    lazy = false,
+    config = function()
+      local iron = require("iron.core")
+      local view = require("iron.view")
+      local common = require("iron.fts.common")
+
+      -- Cache for selected venv per working directory
+      local selected_venv_cache = {}
+
+      iron.setup({
+        config = {
+          scratch_repl = false,
+          close_window_on_exit = false,
+          repl_definition = {
+            sh = {
+              command = {"zsh"}
+            },
+            python = {
+              command = function()
+                local cwd = vim.fn.getcwd()
+
+                -- Check if we already have a cached selection for this directory
+                if selected_venv_cache[cwd] then
+                  local venv = selected_venv_cache[cwd]
+                  return { "sh", "-c", string.format("source '%s' && cd '%s' && uv run ipython", venv.activate, venv.dir) }
+                end
+
+                -- Find all .venv/bin/activate files
+                local find_cmd = string.format("find '%s' -type f -path '*/.venv/bin/activate' 2>/dev/null", cwd)
+                local handle = io.popen(find_cmd)
+                local result = handle:read("*a")
+                handle:close()
+
+                local venv_paths = {}
+                for path in result:gmatch("[^\r\n]+") do
+                  local project_dir = path:gsub("/.venv/bin/activate$", "")
+                  table.insert(venv_paths, {
+                    activate = path,
+                    dir = project_dir,
+                    display = vim.fn.fnamemodify(project_dir, ":~")
+                  })
+                end
+
+                if #venv_paths == 0 then
+                  vim.notify("No .venv found, using uv run from: " .. cwd, vim.log.levels.WARN)
+                  return { "sh", "-c", string.format("cd '%s' && uv run ipython", cwd) }
+                elseif #venv_paths == 1 then
+                  local venv = venv_paths[1]
+                  selected_venv_cache[cwd] = venv
+                  vim.notify(string.format("Initializing iPython from %s", venv.display), vim.log.levels.INFO)
+                  return { "sh", "-c", string.format("source '%s' && cd '%s' && uv run ipython", venv.activate, venv.dir) }
+                else
+                  -- Multiple venvs found - use first as default and show selection
+                  local selected_venv = venv_paths[1]
+
+                  vim.ui.select(
+                    venv_paths,
+                    {
+                      prompt = "Select virtual environment:",
+                      format_item = function(item)
+                        return item.display
+                      end,
+                    },
+                    function(choice)
+                      if choice then
+                        selected_venv = choice
+                        selected_venv_cache[cwd] = choice
+                      end
+                    end
+                  )
+
+                  -- Cache the selection (even if user hasn't selected yet, we use default)
+                  selected_venv_cache[cwd] = selected_venv
+                  vim.notify(string.format("Initializing iPython from %s", selected_venv.display), vim.log.levels.INFO)
+                  return { "sh", "-c", string.format("source '%s' && cd '%s' && uv run ipython --no-autoindent", selected_venv.activate, selected_venv.dir) }
+                end
+              end,
+              format = require("iron.fts.common").bracketed_paste,
+              block_dividers = { "#---", "# ---" },
+            },
+          },
+          -- open with 18 lines at bottom of nvim as a proper split
+          repl_open_cmd = require("iron.view").split.belowright(18)
+        },
+        keymaps = {
+          toggle_repl = "<space>rr",
+          restart_repl = "<space>rR",
+          send_motion = "<space>sc",
+          visual_send = "<space>sc",
+          send_line = "<space>sl",
+          send_code_block = "<space>sb"
+        },
+        highlight = {
+          italic = true
+        },
+        ignore_blank_lines = true,
+      })
+    end
+  },
+  {
     "epwalsh/obsidian.nvim",
     version = "*",
     lazy = false,  -- Load immediately for startup command
