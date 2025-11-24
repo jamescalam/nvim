@@ -77,15 +77,15 @@ hl('IncSearch', { fg = colors.bg, bg = colors.accent })
 hl('MatchParen', { fg = colors.accent, bold = true })
 
 -- Windows and splits
-hl('VertSplit', { fg = colors.panel_border, bg = 'NONE' })
-hl('WinSeparator', { fg = colors.panel_border, bg = 'NONE' })
+hl('VertSplit', { fg = colors.accent, bg = 'NONE' })  -- Using cyan accent (#ccfbf1)
+--hl("WinSeparator", { fg = colors.accent, bg = colors.accent })
 hl('ColorColumn', { bg = colors.line })
 hl('Folded', { fg = colors.comment, bg = colors.panel_bg })
 hl('FoldColumn', { fg = colors.gutter_normal, bg = 'NONE' })
 
 -- Status line
-hl('StatusLine', { fg = colors.fg, bg = colors.panel_bg })
-hl('StatusLineNC', { fg = colors.comment, bg = colors.panel_bg })
+hl('StatusLine', { bg = colors.accent, fg = colors.bg })  -- Dark text on cyan background
+hl('StatusLineNC', { fg = colors.comment, bg = colors.accent })
 
 -- Tabs
 hl('TabLine', { fg = colors.comment, bg = colors.panel_bg })

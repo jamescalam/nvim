@@ -146,21 +146,57 @@ return {
   {
     "nvim-lualine/lualine.nvim",
     dependencies = { "nvim-tree/nvim-web-devicons" }, -- optional, for file icons
-    opts = {
-      options = {
-        theme = "auto",
-        component_separators = { left = '|', right = '|'},
-        section_separators = { left = '', right = ''},
-      },
-      sections = {
-        lualine_a = {'mode'},
-        lualine_b = {'branch', 'diff', 'diagnostics'},
-        lualine_c = {'filename'},
-        lualine_x = {'encoding', 'fileformat', 'filetype'},
-        lualine_y = {'progress'},
-        lualine_z = {'location'}
-      },
-    },
+    config = function()
+      -- Custom theme: dark background with light text, colored mode blocks with dark text
+      local custom_theme = {
+        normal = {
+          a = { fg = '#030712', bg = '#ccfbf1', gui = 'bold' },  -- Dark text on cyan
+          b = { fg = '#e5e7eb', bg = '#030712' },  -- Light text on dark bg
+          c = { fg = '#e5e7eb', bg = '#030712' },
+        },
+        insert = {
+          a = { fg = '#030712', bg = '#4ade80', gui = 'bold' },  -- Dark text on green
+          b = { fg = '#e5e7eb', bg = '#030712' },  -- Light text on dark bg
+          c = { fg = '#e5e7eb', bg = '#030712' },
+        },
+        visual = {
+          a = { fg = '#030712', bg = '#818cf8', gui = 'bold' },  -- Dark text on purple
+          b = { fg = '#e5e7eb', bg = '#030712' },  -- Light text on dark bg
+          c = { fg = '#e5e7eb', bg = '#030712' },
+        },
+        replace = {
+          a = { fg = '#030712', bg = '#f87171', gui = 'bold' },  -- Dark text on red
+          b = { fg = '#e5e7eb', bg = '#030712' },  -- Light text on dark bg
+          c = { fg = '#e5e7eb', bg = '#030712' },
+        },
+        command = {
+          a = { fg = '#030712', bg = '#fbbf24', gui = 'bold' },  -- Dark text on yellow
+          b = { fg = '#e5e7eb', bg = '#030712' },  -- Light text on dark bg
+          c = { fg = '#e5e7eb', bg = '#030712' },
+        },
+        inactive = {
+          a = { fg = '#4b5563', bg = '#020610' },
+          b = { fg = '#4b5563', bg = '#020610' },
+          c = { fg = '#4b5563', bg = '#020610' },
+        },
+      }
+
+      require('lualine').setup({
+        options = {
+          theme = custom_theme,
+          component_separators = { left = '|', right = '|'},
+          section_separators = { left = '', right = ''},
+        },
+        sections = {
+          lualine_a = {'mode'},
+          lualine_b = {'branch', 'diff', 'diagnostics'},
+          lualine_c = {'filename'},
+          lualine_x = {'encoding', 'fileformat', 'filetype'},
+          lualine_y = {'progress'},
+          lualine_z = {'location'}
+        },
+      })
+    end,
   },
   {
     "Shatur/neovim-ayu",
