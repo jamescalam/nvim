@@ -36,7 +36,13 @@ vim.api.nvim_create_autocmd("LspAttach", {
 
 -- Python: ruff for lint/format, pyright for language features. Type checking
 -- is left to mypy (see nvim-lint), so pyright's checker is off.
+-- Both run from the project venv when installed there (uv add --dev ruff pyright).
+vim.lsp.config("ruff", {
+  cmd = python.venv_cmd("ruff", { "server" }),
+})
+
 vim.lsp.config("pyright", {
+  cmd = python.venv_cmd("pyright-langserver", { "--stdio" }),
   before_init = function(_, config)
     -- Point pyright at the project's venv so it resolves installed packages
     config.settings.python.pythonPath = python.venv_python(config.root_dir)

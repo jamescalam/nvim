@@ -42,4 +42,28 @@ function M.venv_tool(name, root)
   return nil
 end
 
+
+-- Build a vim.lsp `cmd` that runs the project venv's copy of a tool when it
+-- exists, otherwise the one on PATH. Warns once per project when a venv
+-- exists but lacks the tool, as a nudge to `uv add --dev <tool>`.
+local warned = {}
+function M.venv_cmd(tool, args)
+  return function(dispatchers, config)
+    local root = config.root_dir
+    local exe = M.venv_tool(tool, root)
+    if not exe then
+      exe = tool
+      local key = tostring(root) .. ":" .. tool
+      if root and not warned[key] and vim.fn.isdirectory(root .. "/.venv") == 1 then
+        warned[key] = true
+        vim.schedule(function()
+          vim.notify(tool .. " not in " .. vim.fn.fnamemodify(root, ":~") .. "/.venv, using PATH copy", vim.log.levels.WARN)
+        end)
+      end
+    end
+    local cmd = vim.list_extend({ exe }, args or {})
+    return vim.lsp.rpc.start(cmd, dispatchers, { cwd = root })
+  end
+end
+
 return M

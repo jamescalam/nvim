@@ -244,7 +244,8 @@ return {
     dependencies = { "mason-org/mason.nvim" },
     enabled = vim.fn.filereadable("/etc/NIXOS") == 0,
     opts = {
-      ensure_installed = { "ruff", "pyright", "mypy", "html-lsp", "css-lsp", "stylua" },
+      -- ruff/pyright/mypy are deliberately absent: they come from each project's venv
+      ensure_installed = { "html-lsp", "css-lsp", "stylua" },
       run_on_start = true,
     },
   },

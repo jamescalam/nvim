@@ -15,8 +15,7 @@ only on the machine where you intend to bump plugins, and commit the lock).
 | Tool | Used by |
 | --- | --- |
 | `rg`, `fd` | telescope |
-| `ruff`, `pyright-langserver` | Python LSP |
-| `mypy` | nvim-lint (the project venv's copy is preferred when present) |
+| `ruff`, `pyright`, `mypy` | Python LSP and lint. Always taken from the project venv: `uv add --dev ruff pyright mypy`. Falls back to PATH with a warning. |
 | `gopls` | Go LSP |
 | `vscode-html-language-server`, `vscode-css-language-server` | HTML/CSS LSP |
 | `stylua` | conform (Lua formatting) |
@@ -28,7 +27,7 @@ On macOS Mason installs the LSP/lint/format tools automatically on startup
 binaries, so put them in `environment.systemPackages`:
 
 ```nix
-ripgrep fd ruff pyright mypy gopls vscode-langservers-extracted stylua uv gcc
+ripgrep fd gopls vscode-langservers-extracted stylua uv gcc
 ```
 
 ## Own plugins
