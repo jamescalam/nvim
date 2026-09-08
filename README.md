@@ -32,9 +32,9 @@ ripgrep fd gopls vscode-langservers-extracted stylua uv gcc
 
 ## Own plugins
 
-`neo-herdr`, `neo-reviewr` and `context-switch` are loaded from
-`~/Documents/aurelio/<repo>` when that checkout exists, otherwise from the
-latest GitHub release (see `own()` at the top of `lua/plugins/init.lua`).
+`neo-herdr`, `neo-reviewr` and `context-switch` are loaded from a local
+checkout when one exists (for development), otherwise from the latest GitHub
+release (see `own()` at the top of `lua/plugins/init.lua`).
 
 ## Python REPL
 
