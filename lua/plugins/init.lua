@@ -229,12 +229,24 @@ return {
       },
     },
   },
-  -- Add Mason (manager for LSP and linters)
+  -- Mason: installs LSP servers / linters / formatters into
+  -- ~/.local/share/nvim/mason/bin, which is added to PATH at setup.
   {
     "mason-org/mason.nvim",
     config = function()
       require("mason").setup()
     end,
+  },
+  -- Keep the tools the config relies on installed. Skipped on NixOS, where
+  -- Mason cannot run downloaded binaries and systemPackages provides them.
+  {
+    "WhoIsSethDaniel/mason-tool-installer.nvim",
+    dependencies = { "mason-org/mason.nvim" },
+    enabled = vim.fn.filereadable("/etc/NIXOS") == 0,
+    opts = {
+      ensure_installed = { "ruff", "pyright", "mypy", "html-lsp", "css-lsp", "stylua" },
+      run_on_start = true,
+    },
   },
   -- Add LSP  
   {

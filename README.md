@@ -23,8 +23,8 @@ only on the machine where you intend to bump plugins, and commit the lock).
 | `uv` | iron.nvim ipython REPL |
 | `gcc` or `clang` | LuaSnip jsregexp, treesitter parsers |
 
-On macOS most of these come via Mason (`:MasonInstall ruff pyright mypy
-html-lsp css-lsp stylua`) or Homebrew. On NixOS Mason cannot install
+On macOS Mason installs the LSP/lint/format tools automatically on startup
+(see `mason-tool-installer` in `lua/plugins/init.lua`); `rg`, `fd`, `uv` and `gopls` come from Homebrew or Go. On NixOS Mason cannot install
 binaries, so put them in `environment.systemPackages`:
 
 ```nix
