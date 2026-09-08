@@ -112,6 +112,9 @@ return {
     "epwalsh/obsidian.nvim",
     version = "*",
     lazy = false,  -- Load immediately for startup command
+    -- setup() throws if the vault is missing, so skip the plugin entirely on
+    -- machines without it
+    enabled = vim.fn.isdirectory(vim.fn.expand("~/Documents/notes")) == 1,
     dependencies = {
       "nvim-lua/plenary.nvim",
     },
