@@ -1,9 +1,13 @@
 -- Set leader key BEFORE loading lazy
 vim.g.mapleader = " "
 
+-- Colorscheme lives in ./colors, so it is available before any plugin loads.
+-- Applying it first lets plugins derive their highlights from it at setup.
+vim.cmd.colorscheme("charon-dark")
+
 -- Set up lazy.nvim
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.loop.fs_stat(lazypath) then
+if not vim.uv.fs_stat(lazypath) then
   vim.fn.system({
     "git",
     "clone",
@@ -26,7 +30,3 @@ require("mappings")
 
 -- Load custom commands
 require("commands")
-
--- Ensure line numbers are set (in case a plugin overrides them)
-vim.o.number = true
-vim.o.relativenumber = true

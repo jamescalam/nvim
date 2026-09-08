@@ -19,7 +19,7 @@ local function close_buffer()
   local buf = vim.api.nvim_get_current_buf()
 
   -- Check if buffer is modified
-  if vim.api.nvim_buf_get_option(buf, 'modified') then
+  if vim.bo[buf].modified then
     vim.notify("Buffer has unsaved changes. Save first or use :bd! to force close.", vim.log.levels.WARN)
     return
   end
@@ -39,3 +39,7 @@ local function close_buffer()
 end
 
 keymap.set("n", "<leader>x", close_buffer, { silent = true, desc = "Close buffer" })
+
+-- Diagnostics
+keymap.set("n", "<leader>rd", vim.diagnostic.open_float, { silent = true, desc = "Show diagnostic float" })
+keymap.set("n", "<leader>rl", vim.diagnostic.setloclist, { silent = true, desc = "Diagnostic list" })

@@ -1,4 +1,45 @@
+-- Own plugins: use the local checkout under ~/Documents/aurelio when it
+-- exists (dev machine), otherwise install from GitHub (e.g. on NixOS).
+local function own(repo, spec)
+  local local_dir = vim.fn.expand("~/Documents/aurelio/" .. repo)
+  if vim.fn.isdirectory(local_dir) == 1 then
+    spec.dir = local_dir
+  else
+    spec[1] = "jamescalam/" .. repo
+    spec.version = "*" -- latest semver release tag
+  end
+  return spec
+end
+
 return {
+  -- neo-herdr: capture review comments in Neovim and send them to the
+  -- currently active herdr agent. Own plugin. Maps under <leader>h.
+  own("neo-herdr.nvim", {
+    name = "neo-herdr",
+    lazy = false,
+    config = function()
+      require("neo-herdr").setup()
+    end,
+  }),
+  -- neo-reviewr: native diff-review view (changed-files tree + unified diff) that
+  -- queues comments into neo-herdr's batch. Own plugin. Opens with <leader>hv.
+  own("neo-reviewr.nvim", {
+    name = "neo-reviewr",
+    lazy = false,
+    dependencies = { "neo-herdr" },
+    config = function()
+      require("neo-reviewr").setup()
+    end,
+  }),
+  -- context-switch: floating project picker over ~/Documents/aurelio (git repos
+  -- by default). Jumps to / opens / closes project tabs. Own plugin. <leader>rp.
+  own("context-switch.nvim", {
+    name = "context-switch",
+    lazy = false,
+    config = function()
+      require("context-switch").setup({ root = "~/Documents/aurelio" })
+    end,
+  }),
   {
     "Vigemus/iron.nvim",
     lazy = false,
@@ -6,9 +47,31 @@ return {
       local iron = require("iron.core")
       local view = require("iron.view")
       local common = require("iron.fts.common")
+      local python = require("configs.python")
 
-      -- Cache for selected venv per working directory
-      local selected_venv_cache = {}
+      -- ipython for the project that owns the buffer the REPL was requested
+      -- from: the venv's own ipython if installed, otherwise uv with ipython
+      -- layered on top of the project's deps, otherwise a standalone ipython.
+      local last_root
+      local function ipython_cmd(meta)
+        local buf = meta and meta.current_bufnr or 0
+        local root = vim.fs.root(buf, { "pyproject.toml", ".venv", ".git" }) or vim.fn.getcwd()
+        local venv_ipython = python.venv_tool("ipython", root)
+        local cmd
+        if venv_ipython then
+          cmd = { venv_ipython, "--no-autoindent" }
+        elseif vim.fn.filereadable(root .. "/pyproject.toml") == 1 then
+          cmd = { "uv", "run", "--project", root, "--with", "ipython", "ipython", "--no-autoindent" }
+        else
+          cmd = { "uvx", "ipython", "--no-autoindent" }
+        end
+        -- iron re-resolves the command on every send; only announce a change
+        if root ~= last_root then
+          last_root = root
+          vim.notify("ipython: " .. vim.fn.fnamemodify(root, ":~"), vim.log.levels.INFO)
+        end
+        return cmd
+      end
 
       iron.setup({
         config = {
@@ -16,74 +79,18 @@ return {
           close_window_on_exit = false,
           repl_definition = {
             sh = {
-              command = {"zsh"}
+              command = { "zsh" },
             },
             python = {
-              command = function()
-                local cwd = vim.fn.getcwd()
-
-                -- Check if we already have a cached selection for this directory
-                if selected_venv_cache[cwd] then
-                  local venv = selected_venv_cache[cwd]
-                  return { "sh", "-c", string.format("source '%s' && cd '%s' && uv run ipython", venv.activate, venv.dir) }
-                end
-
-                -- Find all .venv/bin/activate files
-                local find_cmd = string.format("find '%s' -type f -path '*/.venv/bin/activate' 2>/dev/null", cwd)
-                local handle = io.popen(find_cmd)
-                local result = handle:read("*a")
-                handle:close()
-
-                local venv_paths = {}
-                for path in result:gmatch("[^\r\n]+") do
-                  local project_dir = path:gsub("/.venv/bin/activate$", "")
-                  table.insert(venv_paths, {
-                    activate = path,
-                    dir = project_dir,
-                    display = vim.fn.fnamemodify(project_dir, ":~")
-                  })
-                end
-
-                if #venv_paths == 0 then
-                  vim.notify("No .venv found, using uv run from: " .. cwd, vim.log.levels.WARN)
-                  return { "sh", "-c", string.format("cd '%s' && uv run ipython", cwd) }
-                elseif #venv_paths == 1 then
-                  local venv = venv_paths[1]
-                  selected_venv_cache[cwd] = venv
-                  vim.notify(string.format("Initializing iPython from %s", venv.display), vim.log.levels.INFO)
-                  return { "sh", "-c", string.format("source '%s' && cd '%s' && uv run ipython", venv.activate, venv.dir) }
-                else
-                  -- Multiple venvs found - use first as default and show selection
-                  local selected_venv = venv_paths[1]
-
-                  vim.ui.select(
-                    venv_paths,
-                    {
-                      prompt = "Select virtual environment:",
-                      format_item = function(item)
-                        return item.display
-                      end,
-                    },
-                    function(choice)
-                      if choice then
-                        selected_venv = choice
-                        selected_venv_cache[cwd] = choice
-                      end
-                    end
-                  )
-
-                  -- Cache the selection (even if user hasn't selected yet, we use default)
-                  selected_venv_cache[cwd] = selected_venv
-                  vim.notify(string.format("Initializing iPython from %s", selected_venv.display), vim.log.levels.INFO)
-                  return { "sh", "-c", string.format("source '%s' && cd '%s' && uv run ipython --no-autoindent", selected_venv.activate, selected_venv.dir) }
-                end
-              end,
-              format = require("iron.fts.common").bracketed_paste,
-              block_dividers = { "#---", "# ---" },
+              command = ipython_cmd,
+              format = common.bracketed_paste_python,
+              -- "# %%" is the py:percent standard (jupytext, VS Code, PyCharm);
+              -- the older "#---" / "# ---" markers still work for existing files.
+              block_dividers = { "# %%", "#---", "# ---" },
             },
           },
           -- open with 18 lines at bottom of nvim as a proper split
-          repl_open_cmd = require("iron.view").split.belowright(18)
+          repl_open_cmd = view.split.belowright(18),
         },
         keymaps = {
           toggle_repl = "<space>rr",
@@ -91,20 +98,20 @@ return {
           send_motion = "<space>sc",
           visual_send = "<space>sc",
           send_line = "<space>sl",
-          send_code_block = "<space>sb"
+          send_code_block = "<space>sb",
+          send_code_block_and_move = "<space>sn",
         },
         highlight = {
-          italic = true
+          italic = true,
         },
         ignore_blank_lines = true,
       })
-    end
+    end,
   },
   {
     "epwalsh/obsidian.nvim",
     version = "*",
     lazy = false,  -- Load immediately for startup command
-    ft = "markdown",
     dependencies = {
       "nvim-lua/plenary.nvim",
     },
@@ -125,11 +132,22 @@ return {
     -- open daily note on nvim startup
     config = function(_, opts)
       require("obsidian").setup(opts)
-      -- auto open today's note
+      -- auto open today's note and overview in split
       vim.api.nvim_create_autocmd("VimEnter", {
         callback = function()
-          if vim.fn.argc() == 0 then
+          local overview_path = vim.fn.expand("~/Documents/notes/todos/overview.md")
+          -- Only on machines that actually have the vault
+          if vim.fn.argc() == 0 and vim.fn.isdirectory(vim.fn.expand("~/Documents/notes")) == 1 then
+            -- Open today's todo note
             vim.cmd("ObsidianToday")
+            -- Defer the split to ensure ObsidianToday completes first
+            vim.defer_fn(function()
+              if vim.fn.filereadable(overview_path) == 1 then
+                vim.cmd("belowright split " .. overview_path)
+                -- Return focus to the top split (today's todo)
+                vim.cmd("wincmd k")
+              end
+            end, 100)
           end
         end,
       })
@@ -199,36 +217,17 @@ return {
     end,
   },
   {
-    "Shatur/neovim-ayu",
-    name = "ayu",
-    lazy = false,
-    priority = 1000,  -- ensures it loads first
-    config = function()
-      require('ayu').setup({
-        mirage = false,  -- Set to false to use dark variant
-        overrides = {}, -- A table of overrides
-      })
-      -- Load and set the custom colorscheme
-      vim.cmd.colorscheme "charon-dark"
-    end,
-  },
-  {
-    "catppuccin/nvim",
-    name = "catppuccin",
-    lazy = false,
-    priority = 999,  -- loads after ayu
-    opts = {
-      flavour = "mocha", -- options: latte, frappe, macchiato, mocha
-      transparent_background = false, -- set to true if you want transparency
-      integrations = {
-        lualine = true,  -- if you have lualine installed
-      },
-    },
-  },
-  {
     "stevearc/conform.nvim",
     -- event = 'BufWritePre', -- uncomment for format on save
     opts = require "configs.conform",
+    keys = {
+      {
+        "<leader>fm",
+        function() require("conform").format({ lsp_format = "fallback" }) end,
+        mode = { "n", "v" },
+        desc = "Format buffer (conform, LSP fallback)",
+      },
+    },
   },
   -- Add Mason (manager for LSP and linters)
   {
@@ -244,7 +243,6 @@ return {
       require "configs.lspconfig"
     end,
   },
-  -- Add python pyright server for LSP
   -- Add neo-tree
   {
     "nvim-neo-tree/neo-tree.nvim",
@@ -267,11 +265,6 @@ return {
         },
       })
     end,
-  },
-  -- Disable NvChad's default nvim-tree
-  {
-    "nvim-tree/nvim-tree.lua",
-    enabled = false,
   },
   -- {
   -- 	"nvim-treesitter/nvim-treesitter",
@@ -334,7 +327,7 @@ return {
   },
   {
     "nvim-telescope/telescope.nvim",
-    tag = "0.1.5",
+    tag = "0.1.8",
     dependencies = { "nvim-lua/plenary.nvim" },
   },
   {
@@ -372,26 +365,33 @@ return {
   },
   {
     "mfussenegger/nvim-lint",
-    event = { "BufWritePost", "BufReadPost", "InsertLeave" },
+    event = { "BufReadPost", "BufWritePost", "InsertLeave" },
     config = function()
       local lint = require("lint")
-      
+      local python = require("configs.python")
+
       -- Set linters per filetype
       lint.linters_by_ft = {
         python = { "mypy" },
       }
-      
-      -- Configure mypy
+
+      -- Configure mypy: prefer the project venv's mypy, and always check
+      -- against the venv interpreter so installed packages resolve.
+      lint.linters.mypy.cmd = function()
+        return python.venv_tool("mypy") or "mypy"
+      end
       lint.linters.mypy.args = {
         "--ignore-missing-imports",
         "--show-error-codes",
         "--show-column-numbers",
-        "--warn-return-any",
         "--strict",
+        "--python-executable",
+        function() return python.venv_python() end,
       }
-      
-      -- Set up autocmd to trigger linting
-      vim.api.nvim_create_autocmd({ "BufEnter", "BufWritePost", "InsertLeave", "TextChanged" }, {
+
+      -- mypy is slow, so only lint on read/write/leaving insert (not every keystroke)
+      vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost", "InsertLeave" }, {
+        group = vim.api.nvim_create_augroup("user.lint", { clear = true }),
         callback = function()
           lint.try_lint()
         end,
@@ -459,174 +459,66 @@ return {
     },
   },
   {
-    "pwntester/octo.nvim",
-    dependencies = {
-      "nvim-lua/plenary.nvim",
-      "nvim-telescope/telescope.nvim",
-      "nvim-tree/nvim-web-devicons",
+    "sindrets/diffview.nvim",
+    dependencies = { "nvim-lua/plenary.nvim" },
+    -- Lazy-load only when one of these commands is invoked (or a key below is pressed)
+    cmd = {
+      "DiffviewOpen",
+      "DiffviewClose",
+      "DiffviewFileHistory",
+      "DiffviewToggleFiles",
+      "DiffviewFocusFiles",
     },
     config = function()
-      require("octo").setup({
-        use_local_fs = false,
-        enable_builtin = true,
-        default_remote = {"upstream", "origin"},
-        default_merge_method = "commit",
-        ssh_aliases = {},
-        reaction_viewer_hint_icon = "",
-        user_icon = " ",
-        timeline_marker = "",
-        timeline_indent = 2,
-        right_bubble_delimiter = "",
-        left_bubble_delimiter = "",
-        github_hostname = "",
-        snippet_context_lines = 4,
-        gh_env = {},
-        timeout = 5000,
-        ui = {
-          use_signcolumn = true,
+      require("diffview").setup({
+        enhanced_diff_hl = true, -- richer add/change/delete highlighting
+        hooks = {
+          -- Absolute line numbers inside diffs; relativenumber stays on elsewhere.
+          -- Fires for every diff window, so both panes get plain, file-accurate numbers.
+          diff_buf_win_enter = function(_, winid)
+            vim.wo[winid].relativenumber = false
+            vim.wo[winid].number = true
+          end,
         },
-        issues = {
-          order_by = {
-            field = "CREATED_AT",
-            direction = "DESC"
-          }
+        view = {
+          -- Side-by-side for normal diffs
+          default = { layout = "diff2_horizontal" },
+          -- 3-way (base / ours / theirs) for merge conflicts — the big win over fugitive
+          merge_tool = {
+            layout = "diff3_mixed",
+            disable_diagnostics = true,
+          },
+          -- File-history diffs also side-by-side
+          file_history = { layout = "diff2_horizontal" },
         },
-        pull_requests = {
-          order_by = {
-            field = "CREATED_AT", 
-            direction = "DESC"
-          },
-          always_select_remote_on_create = false
-        },
-        file_panel = {
-          size = 10,
-          use_icons = true
-        },
-        mappings = {
-          issue = {
-            close_issue = { lhs = "<space>ic", desc = "close issue" },
-            reopen_issue = { lhs = "<space>io", desc = "reopen issue" },
-            list_issues = { lhs = "<space>il", desc = "list open issues on same repo" },
-            reload = { lhs = "<C-r>", desc = "reload issue" },
-            open_in_browser = { lhs = "<C-b>", desc = "open issue in browser" },
-            copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
-            add_assignee = { lhs = "<space>aa", desc = "add assignee" },
-            remove_assignee = { lhs = "<space>ad", desc = "remove assignee" },
-            create_label = { lhs = "<space>lc", desc = "create label" },
-            add_label = { lhs = "<space>la", desc = "add label" },
-            remove_label = { lhs = "<space>ld", desc = "remove label" },
-            goto_issue = { lhs = "<space>gi", desc = "navigate to a local repo issue" },
-            add_comment = { lhs = "<space>ghc", desc = "add comment" },
-            delete_comment = { lhs = "<space>cd", desc = "delete comment" },
-            next_comment = { lhs = "]c", desc = "go to next comment" },
-            prev_comment = { lhs = "[c", desc = "go to previous comment" },
-            react_hooray = { lhs = "<space>rp", desc = "add/remove 🎉 reaction" },
-            react_heart = { lhs = "<space>rh", desc = "add/remove ❤️ reaction" },
-            react_eyes = { lhs = "<space>re", desc = "add/remove 👀 reaction" },
-            react_thumbs_up = { lhs = "<space>r+", desc = "add/remove 👍 reaction" },
-            react_thumbs_down = { lhs = "<space>r-", desc = "add/remove 👎 reaction" },
-            react_rocket = { lhs = "<space>rr", desc = "add/remove 🚀 reaction" },
-            react_laugh = { lhs = "<space>rl", desc = "add/remove 😄 reaction" },
-            react_confused = { lhs = "<space>rc", desc = "add/remove 😕 reaction" },
-          },
-          pull_request = {
-            checkout_pr = { lhs = "<space>po", desc = "checkout PR" },
-            merge_pr = { lhs = "<space>pm", desc = "merge commit PR" },
-            squash_and_merge_pr = { lhs = "<space>psm", desc = "squash and merge PR" },
-            rebase_and_merge_pr = { lhs = "<space>prm", desc = "rebase and merge PR" },
-            list_commits = { lhs = "<space>pc", desc = "list PR commits" },
-            list_changed_files = { lhs = "<space>pf", desc = "list PR changed files" },
-            show_pr_diff = { lhs = "<space>pd", desc = "show PR diff" },
-            add_reviewer = { lhs = "<space>va", desc = "add reviewer" },
-            remove_reviewer = { lhs = "<space>vd", desc = "remove reviewer request" },
-            close_issue = { lhs = "<space>ic", desc = "close PR" },
-            reopen_issue = { lhs = "<space>io", desc = "reopen PR" },
-            list_issues = { lhs = "<space>il", desc = "list open issues on same repo" },
-            reload = { lhs = "<C-r>", desc = "reload PR" },
-            open_in_browser = { lhs = "<C-b>", desc = "open PR in browser" },
-            copy_url = { lhs = "<C-y>", desc = "copy url to system clipboard" },
-            goto_file = { lhs = "gf", desc = "go to file" },
-            add_assignee = { lhs = "<space>aa", desc = "add assignee" },
-            remove_assignee = { lhs = "<space>ad", desc = "remove assignee" },
-            create_label = { lhs = "<space>lc", desc = "create label" },
-            add_label = { lhs = "<space>la", desc = "add label" },
-            remove_label = { lhs = "<space>ld", desc = "remove label" },
-            goto_issue = { lhs = "<space>gi", desc = "navigate to a local repo issue" },
-            add_comment = { lhs = "<space>ghc", desc = "add comment" },
-            delete_comment = { lhs = "<space>cd", desc = "delete comment" },
-            next_comment = { lhs = "]c", desc = "go to next comment" },
-            prev_comment = { lhs = "[c", desc = "go to previous comment" },
-            react_hooray = { lhs = "<space>rp", desc = "add/remove 🎉 reaction" },
-            react_heart = { lhs = "<space>rh", desc = "add/remove ❤️ reaction" },
-            react_eyes = { lhs = "<space>re", desc = "add/remove 👀 reaction" },
-            react_thumbs_up = { lhs = "<space>r+", desc = "add/remove 👍 reaction" },
-            react_thumbs_down = { lhs = "<space>r-", desc = "add/remove 👎 reaction" },
-            react_rocket = { lhs = "<space>rr", desc = "add/remove 🚀 reaction" },
-            react_laugh = { lhs = "<space>rl", desc = "add/remove 😄 reaction" },
-            react_confused = { lhs = "<space>rc", desc = "add/remove 😕 reaction" },
-          },
-          review_thread = {
-            goto_issue = { lhs = "<space>gi", desc = "navigate to a local repo issue" },
-            add_comment = { lhs = "<space>ghc", desc = "add comment" },
-            add_suggestion = { lhs = "<space>cs", desc = "add suggestion" },
-            delete_comment = { lhs = "<space>cd", desc = "delete comment" },
-            next_comment = { lhs = "]c", desc = "go to next comment" },
-            prev_comment = { lhs = "[c", desc = "go to previous comment" },
-            select_next_entry = { lhs = "]q", desc = "move to previous changed file" },
-            select_prev_entry = { lhs = "[q", desc = "move to next changed file" },
-            select_first_entry = { lhs = "[Q", desc = "move to first changed file" },
-            select_last_entry = { lhs = "]Q", desc = "move to last changed file" },
-            close_review_tab = { lhs = "<C-c>", desc = "close review tab" },
-            react_hooray = { lhs = "<space>rp", desc = "add/remove 🎉 reaction" },
-            react_heart = { lhs = "<space>rh", desc = "add/remove ❤️ reaction" },
-            react_eyes = { lhs = "<space>re", desc = "add/remove 👀 reaction" },
-            react_thumbs_up = { lhs = "<space>r+", desc = "add/remove 👍 reaction" },
-            react_thumbs_down = { lhs = "<space>r-", desc = "add/remove 👎 reaction" },
-            react_rocket = { lhs = "<space>rr", desc = "add/remove 🚀 reaction" },
-            react_laugh = { lhs = "<space>rl", desc = "add/remove 😄 reaction" },
-            react_confused = { lhs = "<space>rc", desc = "add/remove 😕 reaction" },
-          },
-          submit_win = {
-            approve_review = { lhs = "<C-a>", desc = "approve review" },
-            comment_review = { lhs = "<C-m>", desc = "comment review" },
-            request_changes = { lhs = "<C-r>", desc = "request changes review" },
-            close_review_tab = { lhs = "<C-c>", desc = "close review tab" },
-          },
-          review_diff = {
-            submit_review = { lhs = "<leader>vs", desc = "submit review" },
-            discard_review = { lhs = "<leader>vd", desc = "discard review" },
-            add_review_comment = { lhs = "<space>ghc", desc = "add a new review comment" },
-            add_review_suggestion = { lhs = "<space>cs", desc = "add a new review suggestion" },
-            focus_files = { lhs = "<leader>e", desc = "move focus to changed file panel" },
-            toggle_files = { lhs = "<leader>b", desc = "hide/show changed files panel" },
-            next_thread = { lhs = "]t", desc = "move to next thread" },
-            prev_thread = { lhs = "[t", desc = "move to previous thread" },
-            select_next_entry = { lhs = "]q", desc = "move to previous changed file" },
-            select_prev_entry = { lhs = "[q", desc = "move to next changed file" },
-            select_first_entry = { lhs = "[Q", desc = "move to first changed file" },
-            select_last_entry = { lhs = "]Q", desc = "move to last changed file" },
-            close_review_tab = { lhs = "<C-c>", desc = "close review tab" },
-            toggle_viewed = { lhs = "<leader><space>", desc = "toggle viewer viewed state" },
-            goto_file = { lhs = "gf", desc = "go to file" },
-          },
-          file_panel = {
-            submit_review = { lhs = "<leader>vs", desc = "submit review" },
-            discard_review = { lhs = "<leader>vd", desc = "discard review" },
-            next_entry = { lhs = "j", desc = "move to next changed file" },
-            prev_entry = { lhs = "k", desc = "move to previous changed file" },
-            select_entry = { lhs = "<cr>", desc = "show selected changed file diffs" },
-            refresh_files = { lhs = "R", desc = "refresh changed files panel" },
-            focus_files = { lhs = "<leader>e", desc = "move focus to changed file panel" },
-            toggle_files = { lhs = "<leader>b", desc = "hide/show changed files panel" },
-            select_next_entry = { lhs = "]q", desc = "move to previous changed file" },
-            select_prev_entry = { lhs = "[q", desc = "move to next changed file" },
-            select_first_entry = { lhs = "[Q", desc = "move to first changed file" },
-            select_last_entry = { lhs = "]Q", desc = "move to last changed file" },
-            close_review_tab = { lhs = "<C-c>", desc = "close review tab" },
-            toggle_viewed = { lhs = "<leader><space>", desc = "toggle viewer viewed state" },
-          }
-        }
       })
     end,
-  }
+    keys = {
+      { "<leader>dd", "<cmd>DiffviewOpen<cr>", desc = "Diffview: review working tree" },
+      { "<leader>dc", "<cmd>DiffviewClose<cr>", desc = "Diffview: close" },
+      { "<leader>dh", "<cmd>DiffviewFileHistory %<cr>", desc = "Diffview: current file history" },
+      { "<leader>dH", "<cmd>DiffviewFileHistory<cr>", desc = "Diffview: repo history" },
+      { "<leader>db", "<cmd>DiffviewOpen origin/main...HEAD<cr>", desc = "Diffview: review branch vs main" },
+    },
+  },
+  {
+    "rachartier/tiny-inline-diagnostic.nvim",
+    event = "VeryLazy",
+    config = function()
+      require("tiny-inline-diagnostic").setup({
+        preset = "ghost",
+        options = {
+          show_source = {
+            enabled = true,
+          },
+          multilines = {
+            enabled = true,
+            always_show = false,
+          },
+        },
+      })
+      -- Disable built-in virtual text diagnostics since tiny-inline-diagnostic handles it
+      vim.diagnostic.config({ virtual_text = false })
+    end,
+  },
 }
